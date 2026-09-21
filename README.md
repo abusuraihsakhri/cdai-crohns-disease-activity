@@ -1,5 +1,7 @@
 # Crohn's Disease Activity Index (CDAI) & HBI Calculator
 
+### [Open the Live Application →](https://abusuraihsakhri.github.io/cdai-crohns-disease-activity/)
+
 A small, dependency-free implementation of the Crohn's Disease Activity Index (CDAI), Harvey-Bradshaw Index (HBI), and common CDAI trial response checks. The repository includes a Python library/CLI and a static browser calculator suitable for GitHub Pages.
 
 ## Features
@@ -15,7 +17,7 @@ A small, dependency-free implementation of the Crohn's Disease Activity Index (C
 
 The static application is in `web/`. All calculations run locally in the browser; clinical inputs are not sent to an API or stored by the application. The only browser preference stored locally is the selected color theme.
 
-GitHub Pages deployment is handled by `.github/workflows/pages.yml`. The verified live application link is added here after the first successful deployment.
+GitHub Pages deployment is handled by `.github/workflows/pages.yml`.
 
 ## CDAI formulation
 
