@@ -1,17 +1,5 @@
 #!/usr/bin/env python3
-"""
-Crohn's Disease Activity Index (CDAI) CLI
-=========================================
-Production command line interface for CDAI & HBI calculation,
-trial efficacy endpoint comparison (CR-70/CR-100), and batch cohort processing.
-
-Usage:
-    python cli.py cdai --stools 14 --pain 7 --wellbeing 10 --hct 38.5 --sex MALE --weight 65 --std-weight 70
-    python cli.py hbi --wellbeing 2 --pain 1 --stools 4 --mass 1 --arthralgia
-    python cli.py interactive
-    python cli.py compare --baseline 320 --post 140
-    python cli.py batch --input patients.csv --output results.csv
-"""
+"""Command-line interface for the CDAI/HBI calculator."""
 
 from __future__ import annotations
 
@@ -20,341 +8,294 @@ import csv
 import json
 import os
 import sys
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from cdai_crohns import (
-    CDAIInput,
-    CDAIComplications,
-    CDAIResult,
     AbdominalMass,
     BiologicalSex,
+    CDAIComplications,
+    CDAIInput,
     calculate_cdai,
     calculate_hbi,
     compare_cdai_trial_endpoints,
     HBIInput,
-    HBIResult,
 )
 
 
+def _print_error(exc: Exception) -> int:
+    print(f"Error: {exc}", file=sys.stderr)
+    return 2
+
+
 def run_cdai_single(args: argparse.Namespace) -> int:
-    mass_enum = AbdominalMass.NONE
-    if args.mass >= 4 or str(args.mass).lower() == "definite":
-        mass_enum = AbdominalMass.DEFINITE
-    elif args.mass >= 2 or str(args.mass).lower() in ["questionable", "equivocal"]:
-        mass_enum = AbdominalMass.QUESTIONABLE
-
-    sex_enum = BiologicalSex.FEMALE if args.sex.upper() in ["F", "FEMALE"] else BiologicalSex.MALE
-
-    comp = CDAIComplications(
-        arthritis_or_arthralgia=args.arthralgia,
-        mucocutaneous_lesions=args.skin_lesions,
-        iritis_or_uveitis=args.uveitis,
-        anal_fissure_fistula_abscess=args.perianal,
-        other_bowel_fistula=args.other_fistula,
-        fever_over_37_8c_past_week=args.fever,
-    )
-
-    cdai_in = CDAIInput(
-        liquid_stools_7day_sum=args.stools,
-        abdominal_pain_7day_sum=args.pain,
-        wellbeing_7day_sum=args.wellbeing,
-        complications=comp,
-        taking_antidiarrheals=args.antidiarrheals,
-        abdominal_mass=mass_enum,
-        hematocrit=args.hct,
-        sex=sex_enum,
-        actual_weight_kg=args.weight,
-        standard_weight_kg=args.std_weight,
-    )
-
-    res = calculate_cdai(cdai_in)
+    try:
+        comp = CDAIComplications(
+            arthritis_or_arthralgia=args.arthralgia,
+            mucocutaneous_lesions=args.skin_lesions,
+            iritis_or_uveitis=args.uveitis,
+            anal_fissure_fistula_abscess=args.perianal,
+            other_bowel_fistula=args.other_fistula,
+            fever_over_37_8c_past_week=args.fever,
+        )
+        result = calculate_cdai(
+            CDAIInput(
+                liquid_stools_7day_sum=args.stools,
+                abdominal_pain_7day_sum=args.pain,
+                wellbeing_7day_sum=args.wellbeing,
+                complications=comp,
+                taking_antidiarrheals=args.antidiarrheals,
+                abdominal_mass=AbdominalMass(args.mass),
+                hematocrit=args.hct,
+                sex=BiologicalSex.FEMALE if args.sex.upper().startswith("F") else BiologicalSex.MALE,
+                actual_weight_kg=args.weight,
+                standard_weight_kg=args.std_weight,
+            )
+        )
+    except (TypeError, ValueError) as exc:
+        return _print_error(exc)
 
     if args.json:
-        print(json.dumps(res.to_dict(), indent=2))
+        print(json.dumps(result.to_dict(), indent=2))
         return 0
 
-    print("=" * 65)
-    print("  CROHN'S DISEASE ACTIVITY INDEX (CDAI) ASSESSMENT")
-    print("=" * 65)
-    print(f"Total CDAI Score:  {res.score:.1f}")
-    print(f"Severity Tier:     {res.severity.value}")
-    print(f"Clinical Remission: {'YES (CDAI < 150)' if res.is_remission else 'NO'}")
-    print("-" * 65)
-    print("Subcomponent Point Contributions:")
-    for k, v in res.subscores.to_dict().items():
-        print(f"  - {k:<25}: {v:>6.1f} pts")
-    print("-" * 65)
-    print(f"Interpretation: {res.clinical_interpretation}")
-    print("\nClinical Recommendations:")
-    for idx, r in enumerate(res.action_recommendations, 1):
-        print(f"  {idx}. {r}")
-    print("=" * 65)
+    print("=" * 62)
+    print("CROHN'S DISEASE ACTIVITY INDEX (CDAI)")
+    print("=" * 62)
+    print(f"Score:       {result.score:.1f}")
+    print(f"Category:    {result.severity.value}")
+    print(f"Remission:   {'YES' if result.is_remission else 'NO'}")
+    print("-" * 62)
+    for key, value in result.subscores.to_dict().items():
+        print(f"{key:<28} {value:>7.1f}")
+    print("-" * 62)
+    print(result.clinical_interpretation)
+    print(result.action_recommendations[0])
     return 0
 
 
 def run_hbi(args: argparse.Namespace) -> int:
-    hbi_in = HBIInput(
-        general_wellbeing=args.wellbeing,
-        abdominal_pain=args.pain,
-        liquid_stools_day=args.stools,
-        abdominal_mass=args.mass,
-        arthralgia=args.arthralgia,
-        uveitis=args.uveitis,
-        erythema_nodosum=args.skin_lesions,
-        aphthous_ulcers=args.aphthous,
-        pyoderma_gangrenosum=args.pyoderma,
-        anal_fissure_or_fistula=args.perianal,
-        other_fistula=args.other_fistula,
-        abscess=args.abscess,
-    )
-
-    res = calculate_hbi(hbi_in)
+    try:
+        result = calculate_hbi(
+            HBIInput(
+                general_wellbeing=args.wellbeing,
+                abdominal_pain=args.pain,
+                liquid_stools_day=args.stools,
+                abdominal_mass=args.mass,
+                arthralgia=args.arthralgia,
+                uveitis=args.uveitis,
+                erythema_nodosum=args.skin_lesions,
+                aphthous_ulcers=args.aphthous,
+                pyoderma_gangrenosum=args.pyoderma,
+                anal_fissure_or_fistula=args.perianal,
+                other_fistula=args.other_fistula,
+                abscess=args.abscess,
+            )
+        )
+    except (TypeError, ValueError) as exc:
+        return _print_error(exc)
 
     if args.json:
-        print(json.dumps(res.to_dict(), indent=2))
+        print(json.dumps(result.to_dict(), indent=2))
         return 0
 
-    print("=" * 65)
-    print("  HARVEY-BRADSHAW INDEX (HBI) ASSESSMENT")
-    print("=" * 65)
-    print(f"Total HBI Score:   {res.score}")
-    print(f"Severity Tier:     {res.severity.value}")
-    print(f"Predicted CDAI:    {res.predicted_cdai_range}")
-    print(f"Interpretation:    {res.clinical_interpretation}")
-    print("=" * 65)
+    print("=" * 62)
+    print("HARVEY-BRADSHAW INDEX (HBI)")
+    print("=" * 62)
+    print(f"Score:       {result.score}")
+    print(f"Category:    {result.severity.value}")
+    print(f"Remission:   {'YES' if result.is_remission else 'NO'}")
+    print(result.clinical_interpretation)
+    print(result.predicted_cdai_range)
     return 0
 
 
 def run_compare(args: argparse.Namespace) -> int:
-    base_in = CDAIInput(
-        liquid_stools_7day_sum=0, abdominal_pain_7day_sum=0, wellbeing_7day_sum=0,
-        hematocrit=42.0, actual_weight_kg=70.0, standard_weight_kg=70.0
-    )
-    # create dummy result objects to utilize the endpoint comparison
-    base_res = calculate_cdai(base_in)
-    base_res.score = args.baseline
-
-    post_res = calculate_cdai(base_in)
-    post_res.score = args.post
-
-    comp = compare_cdai_trial_endpoints(base_res, post_res)
+    try:
+        baseline = calculate_cdai(CDAIInput(0, 0, 0, hematocrit=42.0))
+        post = calculate_cdai(CDAIInput(0, 0, 0, hematocrit=42.0))
+        baseline.score = args.baseline
+        post.score = args.post
+        comparison = compare_cdai_trial_endpoints(baseline, post)
+    except (TypeError, ValueError) as exc:
+        return _print_error(exc)
 
     if args.json:
-        print(json.dumps(comp.to_dict(), indent=2))
+        print(json.dumps(comparison.to_dict(), indent=2))
         return 0
 
-    print("=" * 65)
-    print("  CDAI LONGITUDINAL & CLINICAL TRIAL RESPONSE COMPARISON")
-    print("=" * 65)
-    print(f"Baseline CDAI:       {comp.baseline_score:.1f}")
-    print(f"Post-Treatment CDAI: {comp.post_treatment_score:.1f}")
-    print(f"Absolute Delta:      {comp.absolute_delta:.1f} points ({comp.percentage_reduction:.1f}% reduction)")
-    print("-" * 65)
-    print(f"CR-70 Endpoint (Delta >= 70 pts):   {'ACHIEVED [PASS]' if comp.cr70_achieved else 'FAILED [NOT MET]'}")
-    print(f"CR-100 Endpoint (Delta >= 100 pts): {'ACHIEVED [PASS]' if comp.cr100_achieved else 'FAILED [NOT MET]'}")
-    print(f"Clinical Remission (Post < 150):    {'ACHIEVED [PASS]' if comp.remission_achieved else 'FAILED [NOT MET]'}")
-    print("-" * 65)
-    print(f"Summary: {comp.therapeutic_response_summary}")
-    print("=" * 65)
+    print("=" * 62)
+    print("CDAI RESPONSE ENDPOINT COMPARISON")
+    print("=" * 62)
+    print(f"Baseline:    {comparison.baseline_score:.1f}")
+    print(f"Post:        {comparison.post_treatment_score:.1f}")
+    print(f"Change:      {comparison.absolute_delta:+.1f}")
+    print(f"CR-70:       {'MET' if comparison.cr70_achieved else 'NOT MET'}")
+    print(f"CR-100:      {'MET' if comparison.cr100_achieved else 'NOT MET'}")
+    print(f"Remission:   {'MET' if comparison.remission_achieved else 'NOT MET'}")
     return 0
 
 
 def run_batch(args: argparse.Namespace) -> int:
-    if not os.path.exists(args.input):
-        print(f"Error: Input file '{args.input}' not found.", file=sys.stderr)
+    if not os.path.isfile(args.input):
+        print(f"Error: input file '{args.input}' not found.", file=sys.stderr)
         return 1
 
-    with open(args.input, "r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
-        fieldnames = list(reader.fieldnames or [])
+    try:
+        with open(args.input, "r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            if reader.fieldnames is None:
+                raise ValueError("input CSV has no header")
+            rows = list(reader)
+            fieldnames = list(reader.fieldnames)
+    except (OSError, csv.Error, ValueError) as exc:
+        return _print_error(exc)
 
-    out_fields = fieldnames + ["cdai_score", "cdai_severity", "is_remission", "clinical_recommendation"]
-    out_rows = []
+    output_fields = fieldnames + ["cdai_score", "cdai_severity", "is_remission", "interpretation", "error"]
+    output_rows = []
+    errors = 0
 
-    for r in rows:
+    for row_number, row in enumerate(rows, start=2):
+        output = dict(row)
         try:
-            res = calculate_cdai(r)
-            row_dict = dict(r)
-            row_dict["cdai_score"] = round(res.score, 1)
-            row_dict["cdai_severity"] = res.severity.value
-            row_dict["is_remission"] = "YES" if res.is_remission else "NO"
-            row_dict["clinical_recommendation"] = res.action_recommendations[0] if res.action_recommendations else ""
-            out_rows.append(row_dict)
-        except Exception as e:
-            row_dict = dict(r)
-            row_dict["cdai_score"] = "ERROR"
-            row_dict["cdai_severity"] = str(e)
-            row_dict["is_remission"] = "NO"
-            row_dict["clinical_recommendation"] = ""
-            out_rows.append(row_dict)
+            result = calculate_cdai(row)
+            output.update(
+                cdai_score=f"{result.score:.1f}",
+                cdai_severity=result.severity.value,
+                is_remission="YES" if result.is_remission else "NO",
+                interpretation=result.clinical_interpretation,
+                error="",
+            )
+        except (TypeError, ValueError) as exc:
+            errors += 1
+            output.update(
+                cdai_score="",
+                cdai_severity="",
+                is_remission="",
+                interpretation="",
+                error=f"row {row_number}: {exc}",
+            )
+        output_rows.append(output)
 
-    with open(args.output, "w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=out_fields)
-        writer.writeheader()
-        writer.writerows(out_rows)
+    try:
+        with open(args.output, "w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=output_fields, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(output_rows)
+    except OSError as exc:
+        return _print_error(exc)
 
-    print(f"Successfully processed {len(out_rows)} records into '{args.output}'.")
-    return 0
+    print(f"Processed {len(output_rows)} records into '{args.output}' ({errors} row errors).")
+    return 2 if errors else 0
 
 
-def run_interactive(args: argparse.Namespace) -> int:
-    print("=" * 65)
-    print("  CROHN'S DISEASE ACTIVITY INDEX (CDAI) INTERACTIVE WIZARD")
-    print("=" * 65)
+def run_interactive(_: argparse.Namespace) -> int:
+    print("Interactive mode is intentionally conservative. Enter the 7-day CDAI sums.")
 
-    def ask_int(prompt: str, default: int = 0) -> int:
-        val = input(f"{prompt} [{default}]: ").strip()
-        return int(val) if val.isdigit() else default
+    def ask_int(prompt: str, default: int) -> int:
+        raw = input(f"{prompt} [{default}]: ").strip()
+        return int(raw) if raw else default
 
-    def ask_float(prompt: str, default: float = 0.0) -> float:
-        val = input(f"{prompt} [{default}]: ").strip()
-        try:
-            return float(val) if val else default
-        except ValueError:
-            return default
+    def ask_float(prompt: str, default: float) -> float:
+        raw = input(f"{prompt} [{default}]: ").strip()
+        return float(raw) if raw else default
 
-    def ask_bool(prompt: str) -> bool:
-        val = input(f"{prompt} (y/N): ").strip().lower()
-        return val in ["y", "yes", "true", "1"]
+    try:
+        args = argparse.Namespace(
+            stools=ask_int("Liquid/soft stools (7-day sum)", 14),
+            pain=ask_int("Abdominal pain (7-day sum, 0-21)", 7),
+            wellbeing=ask_int("General well-being (7-day sum, 0-28)", 10),
+            arthralgia=False,
+            skin_lesions=False,
+            uveitis=False,
+            perianal=False,
+            other_fistula=False,
+            fever=False,
+            antidiarrheals=False,
+            mass=0,
+            hct=ask_float("Hematocrit (%)", 40.0),
+            sex=(input("Sex for CDAI hematocrit term (M/F) [M]: ").strip() or "M"),
+            weight=ask_float("Actual weight (kg)", 65.0),
+            std_weight=ask_float("Standard weight (kg)", 70.0),
+            json=False,
+        )
+    except ValueError as exc:
+        return _print_error(exc)
+    return run_cdai_single(args)
 
-    stools = ask_int("1. Total number of liquid or very soft stools over 7 days", 14)
-    pain = ask_int("2. Abdominal pain rating sum over 7 days (0=none to 3=severe per day; max 21)", 7)
-    wellbeing = ask_int("3. General well-being rating sum over 7 days (0=well to 4=terrible per day; max 28)", 10)
 
-    print("\n4. Extra-intestinal Manifestations / Complications:")
-    arth = ask_bool("   - Arthritis or arthralgia?")
-    skin = ask_bool("   - Mucocutaneous lesions (erythema nodosum, aphthous ulcers, pyoderma)?")
-    uveitis = ask_bool("   - Iritis or uveitis?")
-    perianal = ask_bool("   - Anal fissure, fistula, or abscess?")
-    fistula = ask_bool("   - Other bowel fistula?")
-    fever = ask_bool("   - Fever > 37.8 C (100 F) during the past week?")
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="CDAI and HBI calculator")
+    subparsers = parser.add_subparsers(dest="command")
 
-    anti = ask_bool("\n5. Taking loperamide, Lomotil, or opiates for diarrhea?")
-    
-    print("\n6. Abdominal Mass:")
-    print("   0 = None, 2 = Questionable/Equivocal, 5 = Definite mass")
-    mass_val = ask_int("   Enter mass score (0, 2, or 5)", 0)
-    mass_enum = AbdominalMass.DEFINITE if mass_val >= 4 else (AbdominalMass.QUESTIONABLE if mass_val >= 2 else AbdominalMass.NONE)
+    cdai = subparsers.add_parser("cdai", help="Calculate CDAI")
+    cdai.add_argument("--stools", type=int, default=14)
+    cdai.add_argument("--pain", type=int, default=7)
+    cdai.add_argument("--wellbeing", type=int, default=10)
+    cdai.add_argument("--arthralgia", action="store_true")
+    cdai.add_argument("--skin-lesions", action="store_true")
+    cdai.add_argument("--uveitis", action="store_true")
+    cdai.add_argument("--perianal", action="store_true")
+    cdai.add_argument("--other-fistula", action="store_true")
+    cdai.add_argument("--fever", action="store_true")
+    cdai.add_argument("--antidiarrheals", action="store_true")
+    cdai.add_argument("--mass", type=int, choices=[0, 2, 5], default=0)
+    cdai.add_argument("--hct", type=float, default=42.0)
+    cdai.add_argument("--sex", choices=["M", "F", "MALE", "FEMALE", "male", "female"], default="M")
+    cdai.add_argument("--weight", type=float, default=70.0)
+    cdai.add_argument("--std-weight", type=float, default=70.0)
+    cdai.add_argument("--json", action="store_true")
 
-    sex_str = input("\n7. Patient biological sex (M/F) [M]: ").strip().upper() or "M"
-    sex_enum = BiologicalSex.FEMALE if sex_str in ["F", "FEMALE"] else BiologicalSex.MALE
+    hbi = subparsers.add_parser("hbi", help="Calculate HBI")
+    hbi.add_argument("--wellbeing", type=int, choices=range(0, 5), default=1)
+    hbi.add_argument("--pain", type=int, choices=range(0, 4), default=1)
+    hbi.add_argument("--stools", type=int, default=3)
+    hbi.add_argument("--mass", type=int, choices=range(0, 4), default=0)
+    hbi.add_argument("--arthralgia", action="store_true")
+    hbi.add_argument("--uveitis", action="store_true")
+    hbi.add_argument("--skin-lesions", action="store_true")
+    hbi.add_argument("--aphthous", action="store_true")
+    hbi.add_argument("--pyoderma", action="store_true")
+    hbi.add_argument("--perianal", action="store_true")
+    hbi.add_argument("--other-fistula", action="store_true")
+    hbi.add_argument("--abscess", action="store_true")
+    hbi.add_argument("--json", action="store_true")
 
-    hct = ask_float("8. Hematocrit percentage (e.g. 38.5)", 40.0)
-    actual_w = ask_float("9. Patient's actual body weight (kg)", 65.0)
-    std_w = ask_float("10. Standard / ideal body weight for height (kg)", 70.0)
+    compare = subparsers.add_parser("compare", help="Compare baseline and post-treatment CDAI")
+    compare.add_argument("--baseline", type=float, required=True)
+    compare.add_argument("--post", type=float, required=True)
+    compare.add_argument("--json", action="store_true")
 
-    comp = CDAIComplications(
-        arthritis_or_arthralgia=arth,
-        mucocutaneous_lesions=skin,
-        iritis_or_uveitis=uveitis,
-        anal_fissure_fistula_abscess=perianal,
-        other_bowel_fistula=fistula,
-        fever_over_37_8c_past_week=fever,
-    )
+    batch = subparsers.add_parser("batch", help="Process a cohort CSV")
+    batch.add_argument("--input", "-i", required=True)
+    batch.add_argument("--output", "-o", default="cdai_results.csv")
 
-    cdai_in = CDAIInput(
-        liquid_stools_7day_sum=stools,
-        abdominal_pain_7day_sum=pain,
-        wellbeing_7day_sum=wellbeing,
-        complications=comp,
-        taking_antidiarrheals=anti,
-        abdominal_mass=mass_enum,
-        hematocrit=hct,
-        sex=sex_enum,
-        actual_weight_kg=actual_w,
-        standard_weight_kg=std_w,
-    )
-
-    res = calculate_cdai(cdai_in)
-
-    print("\n" + "=" * 65)
-    print(f"Total CDAI Score:   {res.score:.1f}")
-    print(f"Severity Tier:      {res.severity.value}")
-    print(f"Clinical Remission: {'YES (CDAI < 150)' if res.is_remission else 'NO'}")
-    print("-" * 65)
-    print("Point Breakdown:")
-    for k, v in res.subscores.to_dict().items():
-        print(f"  {k:<25}: {v:>6.1f} pts")
-    print("-" * 65)
-    print(f"Guidance: {res.clinical_interpretation}")
-    print("=" * 65)
-    return 0
+    subparsers.add_parser("interactive", help="Interactive CDAI entry")
+    return parser
 
 
 def main(argv: Optional[List[str]] = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="CDAI & HBI Calculator - Clinical Activity Index for Crohn's Disease"
-    )
-    subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
+    raw_args = sys.argv[1:] if argv is None else argv
+    parser = build_parser()
+    if not raw_args:
+        if sys.stdin.isatty():
+            return run_interactive(argparse.Namespace())
+        parser.print_help()
+        return 0
 
-    # CDAI subcommand
-    cdai_p = subparsers.add_parser("cdai", help="Calculate Crohn's Disease Activity Index (7-day)")
-    cdai_p.add_argument("--stools", type=int, default=14, help="7-day sum of liquid/soft stools")
-    cdai_p.add_argument("--pain", type=int, default=7, help="7-day sum of abdominal pain (0-21)")
-    cdai_p.add_argument("--wellbeing", type=int, default=10, help="7-day sum of general wellbeing (0-28)")
-    cdai_p.add_argument("--arthralgia", action="store_true", help="Presence of arthritis/arthralgia")
-    cdai_p.add_argument("--skin-lesions", action="store_true", help="Presence of erythema nodosum/pyoderma/aphthous ulcers")
-    cdai_p.add_argument("--uveitis", action="store_true", help="Presence of iritis/uveitis")
-    cdai_p.add_argument("--perianal", action="store_true", help="Presence of anal fissure, fistula, or abscess")
-    cdai_p.add_argument("--other-fistula", action="store_true", help="Presence of other bowel fistula")
-    cdai_p.add_argument("--fever", action="store_true", help="Fever > 37.8 C during past week")
-    cdai_p.add_argument("--antidiarrheals", action="store_true", help="Taking Lomotil/opiates for diarrhea")
-    cdai_p.add_argument("--mass", type=int, default=0, help="Abdominal mass (0=none, 2=questionable, 5=definite)")
-    cdai_p.add_argument("--hct", type=float, default=42.0, help="Hematocrit percentage (e.g. 38.5)")
-    cdai_p.add_argument("--sex", choices=["MALE", "FEMALE", "M", "F", "male", "female"], default="MALE", help="Biological sex")
-    cdai_p.add_argument("--weight", type=float, default=70.0, help="Actual weight (kg)")
-    cdai_p.add_argument("--std-weight", type=float, default=70.0, help="Standard weight for height (kg)")
-    cdai_p.add_argument("--json", action="store_true", help="Output JSON result")
-
-    # HBI subcommand
-    hbi_p = subparsers.add_parser("hbi", help="Calculate Harvey-Bradshaw Index (1-day)")
-    hbi_p.add_argument("--wellbeing", type=int, default=1, help="Well-being (0=very well to 4=terrible)")
-    hbi_p.add_argument("--pain", type=int, default=1, help="Abdominal pain (0=none, 1=mild, 2=mod, 3=severe)")
-    hbi_p.add_argument("--stools", type=int, default=3, help="Number of liquid stools per day")
-    hbi_p.add_argument("--mass", type=int, default=0, help="Abdominal mass (0=none, 1=dubious, 2=definite, 3=tender)")
-    hbi_p.add_argument("--arthralgia", action="store_true", help="Arthritis / arthralgia")
-    hbi_p.add_argument("--uveitis", action="store_true", help="Iritis / uveitis")
-    hbi_p.add_argument("--skin-lesions", action="store_true", help="Erythema nodosum")
-    hbi_p.add_argument("--aphthous", action="store_true", help="Aphthous ulcers")
-    hbi_p.add_argument("--pyoderma", action="store_true", help="Pyoderma gangrenosum")
-    hbi_p.add_argument("--perianal", action="store_true", help="Anal fissure or fistula")
-    hbi_p.add_argument("--other-fistula", action="store_true", help="Other fistula")
-    hbi_p.add_argument("--abscess", action="store_true", help="Abscess")
-    hbi_p.add_argument("--json", action="store_true", help="Output JSON result")
-
-    # Compare subcommand
-    comp_p = subparsers.add_parser("compare", help="Compare baseline vs post-treatment CDAI scores (CR-70 / CR-100)")
-    comp_p.add_argument("--baseline", type=float, required=True, help="Baseline CDAI score")
-    comp_p.add_argument("--post", type=float, required=True, help="Post-treatment CDAI score")
-    comp_p.add_argument("--json", action="store_true", help="Output JSON result")
-
-    # Batch subcommand
-    batch_p = subparsers.add_parser("batch", help="Batch process CSV cohort file")
-    batch_p.add_argument("--input", "-i", required=True, help="Input CSV file path")
-    batch_p.add_argument("--output", "-o", default="cdai_results.csv", help="Output CSV file path")
-
-    # Interactive subcommand
-    subparsers.add_parser("interactive", help="Interactive CDAI calculation wizard")
-
-    args = parser.parse_args(argv)
-
-    if args.command == "cdai":
-        return run_cdai_single(args)
-    elif args.command == "hbi":
-        return run_hbi(args)
-    elif args.command == "compare":
-        return run_compare(args)
-    elif args.command == "batch":
-        return run_batch(args)
-    elif args.command == "interactive":
-        return run_interactive(args)
-    else:
-        if len(sys.argv) == 1:
-            return run_interactive(args)
+    args = parser.parse_args(raw_args)
+    handlers = {
+        "cdai": run_cdai_single,
+        "hbi": run_hbi,
+        "compare": run_compare,
+        "batch": run_batch,
+        "interactive": run_interactive,
+    }
+    handler = handlers.get(args.command)
+    if handler is None:
         parser.print_help()
         return 1
+    return handler(args)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

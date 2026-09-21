@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="description" content="Client-side Crohn's Disease Activity Index (CDAI), Harvey-Bradshaw Index (HBI), and trial response calculator.">
+  <title>Crohn's Disease Activity Calculator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div>
+        <p class="eyebrow">Crohn's disease activity</p>
+        <h1>CDAI & HBI Calculator</h1>
+        <p class="subtitle">Published activity-index calculations in a local, browser-only interface. No clinical inputs are transmitted or stored.</p>
+      </div>
+      <button id="themeToggle" class="icon-btn" type="button" aria-label="Switch color theme" title="Switch color theme">Dark</button>
+    </header>
+
+    <nav class="tabs" aria-label="Calculator mode">
+      <button class="tab" type="button" data-tab="cdai" aria-selected="true">CDAI</button>
+      <button class="tab" type="button" data-tab="hbi" aria-selected="false">HBI</button>
+      <button class="tab" type="button" data-tab="trial" aria-selected="false">Trial response</button>
+    </nav>
+
+    <main>
+      <section id="cdaiPanel" class="panel" data-panel="cdai">
+        <form id="cdaiForm" class="card form-card" novalidate>
+          <div class="section-title"><h2>CDAI inputs</h2><span class="hint">7-day diary + examination</span></div>
+          <div class="form-grid">
+            <div class="field"><label for="cdaiStools">Liquid/soft stools · 7-day sum</label><input id="cdaiStools" type="number" min="0" step="1" value="14" required></div>
+            <div class="field"><label for="cdaiPain">Abdominal pain · 7-day sum</label><input id="cdaiPain" type="number" min="0" max="21" step="1" value="7" required></div>
+            <div class="field"><label for="cdaiWellbeing">Well-being · 7-day sum</label><input id="cdaiWellbeing" type="number" min="0" max="28" step="1" value="10" required></div>
+            <div class="field"><label for="cdaiMass">Abdominal mass</label><select id="cdaiMass"><option value="0">None · 0</option><option value="2">Questionable · 2</option><option value="5">Definite · 5</option></select></div>
+            <div class="field"><label for="cdaiHct">Hematocrit (%)</label><input id="cdaiHct" type="number" min="10" max="65" step="0.1" value="38.5" required></div>
+            <div class="field"><label for="cdaiSex">Sex for hematocrit term</label><select id="cdaiSex"><option value="MALE">Male · reference 47%</option><option value="FEMALE">Female · reference 42%</option></select></div>
+            <div class="field"><label for="cdaiWeight">Actual weight (kg)</label><input id="cdaiWeight" type="number" min="0.1" step="0.1" value="65" required></div>
+            <div class="field"><label for="cdaiStdWeight">Standard weight (kg)</label><input id="cdaiStdWeight" type="number" min="0.1" step="0.1" value="70" required></div>
+          </div>
+          <fieldset>
+            <legend>Complications and antidiarrheal use</legend>
+            <div class="checks">
+              <label class="check"><input id="cArthralgia" type="checkbox"> Arthritis / arthralgia</label>
+              <label class="check"><input id="cSkin" type="checkbox"> Mucocutaneous lesions</label>
+              <label class="check"><input id="cUveitis" type="checkbox"> Iritis / uveitis</label>
+              <label class="check"><input id="cPerianal" type="checkbox"> Anal fissure / fistula / abscess</label>
+              <label class="check"><input id="cFistula" type="checkbox"> Other fistula</label>
+              <label class="check"><input id="cFever" type="checkbox"> Fever &gt;37.8 °C</label>
+              <label class="check"><input id="cAnti" type="checkbox"> Antidiarrheal / opiate for diarrhea</label>
+            </div>
+          </fieldset>
+          <div class="actions"><button class="primary" type="submit">Calculate CDAI</button><button id="cdaiReset" class="secondary" type="button">Reset</button></div>
+          <div id="cdaiError" class="error" role="alert" aria-live="polite"></div>
+        </form>
+        <aside class="card result-card" aria-live="polite">
+          <div class="section-title"><h2>Result</h2><span class="hint">Best et al. formulation</span></div>
+          <div class="score-block"><div class="score-label">CDAI score</div><div id="cdaiScore" class="score">—</div><div><span id="cdaiSeverity" class="severity">Enter values and calculate</span><span id="cdaiRange" class="range"></span></div></div>
+          <table class="breakdown"><thead><tr><th>Component</th><th>Points</th></tr></thead><tbody id="cdaiBreakdown"><tr><td colspan="2">No calculation yet.</td></tr></tbody></table>
+          <p id="cdaiNote" class="note">The calculator implements the score; it does not prescribe treatment.</p>
+        </aside>
+      </section>
+
+      <section id="hbiPanel" class="panel hidden" data-panel="hbi">
+        <form id="hbiForm" class="card form-card" novalidate>
+          <div class="section-title"><h2>HBI inputs</h2><span class="hint">Single-day assessment</span></div>
+          <div class="form-grid">
+            <div class="field"><label for="hbiWellbeing">General well-being (0–4)</label><input id="hbiWellbeing" type="number" min="0" max="4" step="1" value="1" required></div>
+            <div class="field"><label for="hbiPain">Abdominal pain (0–3)</label><input id="hbiPain" type="number" min="0" max="3" step="1" value="1" required></div>
+            <div class="field"><label for="hbiStools">Liquid stools / day</label><input id="hbiStools" type="number" min="0" step="1" value="4" required></div>
+            <div class="field"><label for="hbiMass">Abdominal mass (0–3)</label><input id="hbiMass" type="number" min="0" max="3" step="1" value="0" required></div>
+          </div>
+          <fieldset><legend>Complications · 1 point each</legend><div class="checks">
+            <label class="check"><input id="hArthralgia" type="checkbox"> Arthralgia</label><label class="check"><input id="hUveitis" type="checkbox"> Uveitis</label>
+            <label class="check"><input id="hErythema" type="checkbox"> Erythema nodosum</label><label class="check"><input id="hAphthous" type="checkbox"> Aphthous ulcers</label>
+            <label class="check"><input id="hPyoderma" type="checkbox"> Pyoderma gangrenosum</label><label class="check"><input id="hPerianal" type="checkbox"> Anal fissure / fistula</label>
+            <label class="check"><input id="hFistula" type="checkbox"> Other fistula</label><label class="check"><input id="hAbscess" type="checkbox"> Abscess</label>
+          </div></fieldset>
+          <div class="actions"><button class="primary" type="submit">Calculate HBI</button><button id="hbiReset" class="secondary" type="button">Reset</button></div>
+          <div id="hbiError" class="error" role="alert" aria-live="polite"></div>
+        </form>
+        <aside class="card result-card" aria-live="polite">
+          <div class="section-title"><h2>Result</h2><span class="hint">Harvey-Bradshaw Index</span></div>
+          <div class="score-block"><div class="score-label">HBI score</div><div id="hbiScore" class="score">—</div><div><span id="hbiSeverity" class="severity">Enter values and calculate</span><span id="hbiRange" class="range"></span></div></div>
+          <div class="status"><span>Complication points</span><b id="hbiComplications">—</b></div>
+          <p id="hbiNote" class="note">HBI and CDAI are related measures but should not be treated as interchangeable scores.</p>
+        </aside>
+      </section>
+
+      <section id="trialPanel" class="panel hidden" data-panel="trial">
+        <form id="trialForm" class="card form-card" novalidate>
+          <div class="section-title"><h2>Trial response inputs</h2><span class="hint">CDAI endpoint comparison</span></div>
+          <div class="form-grid">
+            <div class="field"><label for="baseline">Baseline CDAI</label><input id="baseline" type="number" min="0" step="0.1" value="320" required></div>
+            <div class="field"><label for="post">Post-treatment CDAI</label><input id="post" type="number" min="0" step="0.1" value="140" required></div>
+          </div>
+          <div class="actions"><button class="primary" type="submit">Compare scores</button><button id="trialReset" class="secondary" type="button">Reset</button></div>
+          <div id="trialError" class="error" role="alert" aria-live="polite"></div>
+        </form>
+        <aside class="card result-card" aria-live="polite">
+          <div class="section-title"><h2>Endpoint result</h2><span class="hint">Absolute score change</span></div>
+          <div class="score-block"><div class="score-label">CDAI change · baseline − post</div><div id="trialDelta" class="score">—</div><div id="trialPercent" class="severity">Enter values and compare</div></div>
+          <div class="status-grid"><div class="status"><span>CR-70</span><b id="trialCr70">—</b></div><div class="status"><span>CR-100</span><b id="trialCr100">—</b></div><div class="status"><span>Post CDAI &lt;150</span><b id="trialRemission">—</b></div></div>
+          <p class="note">These are arithmetic endpoint checks. Protocol definitions and analysis conventions should be applied separately.</p>
+        </aside>
+      </section>
+    </main>
+
+    <footer><span>Research and educational implementation; not a substitute for clinical judgment.</span><span>Runs entirely in your browser · <code>no network API</code></span></footer>
+  </div>
+  <script src="calculator.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

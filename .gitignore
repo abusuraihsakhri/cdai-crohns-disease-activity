@@ -1,9 +1,7 @@
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
+*.py[cod]
 .pytest_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 dist/
@@ -16,8 +14,8 @@ results.csv
 output.csv
 output.json
 out_smoke.csv
+cdai_results.csv
 test_batch_*.csv
 *.log
 .DS_Store
 Thumbs.db
-

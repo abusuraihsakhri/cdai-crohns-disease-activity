@@ -1,6 +1,5 @@
 patient_id,stools,pain,wellbeing,arthralgia,skin_lesions,uveitis,fistula,fever,antidiarrheal,abdominal_mass,hct,sex,weight_kg,standard_weight
 PT_REMISSION_01,7,2,3,0,0,0,0,0,0,none,44.0,M,72.0,72.0
-PT_MILD_02,14,5,7,1,0,0,0,0,0,none,39.0,F,58.0,60.0
+PT_MILD_02,14,5,7,1,1,0,0,0,0,none,39.0,F,58.0,60.0
 PT_MODERATE_03,24,12,14,1,1,0,1,0,1,questionable,34.0,M,62.0,70.0
 PT_SEVERE_04,38,18,22,1,1,1,1,1,1,definite,28.5,F,46.0,58.0
-
